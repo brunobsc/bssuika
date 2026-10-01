@@ -77,6 +77,9 @@
   --popup: #fff1e2;
 }
 
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"] { color-scheme: dark; }
+
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 html, body { height: 100%; margin: 0; }
@@ -158,6 +161,7 @@ body {
   transition: background .2s, color .2s;
 }
 .seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+.seg.small button { padding: 4px 9px; font-size: 13px; line-height: 1; }
 .seg button:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 canvas#game {
   flex: 1;
@@ -259,6 +263,9 @@ canvas#game {
   .score, .chain .dot { transition: none; }
 }
 </style>
+<script>
+try { var t = localStorage.getItem('bssuika.theme'); if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t); } catch (e) {}
+</script>
 </head>
 <body>
 <div id="app">
@@ -273,6 +280,10 @@ canvas#game {
       <div class="seg" role="group" aria-label="Modo de jogo">
         <button id="mode-molenga" type="button" aria-pressed="false" title="Física do suikagame.com">Molenga</button>
         <button id="mode-rigido" type="button" aria-pressed="false" title="Física original do BS Suika">Rígido</button>
+      </div>
+      <div class="seg small" role="group" aria-label="Tema">
+        <button id="theme-light" type="button" aria-pressed="false" aria-label="Tema claro" title="Claro">☀️</button>
+        <button id="theme-dark" type="button" aria-pressed="false" aria-label="Tema escuro" title="Escuro">🌙</button>
       </div>
     </div>
     <div class="next-block">
@@ -380,6 +391,7 @@ canvas#game {
   const overlay = $('overlay'), finalEl = $('final'), finalSubEl = $('final-sub'), restartBtn = $('restart');
   const tip = $('tip'), tipClose = $('tip-close');
   const modeButtons = { molenga: $('mode-molenga'), rigido: $('mode-rigido') };
+  const themeButtons = { light: $('theme-light'), dark: $('theme-dark') };
 
   // ---- Estado ----
   let W = 0, H = 0, dpr = 1;
@@ -658,6 +670,28 @@ canvas#game {
     for (const key in modeButtons) modeButtons[key].setAttribute('aria-pressed', String(key === name));
   }
   for (const key in modeButtons) modeButtons[key].addEventListener('click', () => applyMode(key));
+
+  // ---- Tema claro/escuro ----
+  const systemDark = window.matchMedia ? matchMedia('(prefers-color-scheme: dark)') : null;
+  function currentTheme() {
+    const t = document.documentElement.getAttribute('data-theme');
+    if (t === 'light' || t === 'dark') return t;
+    return systemDark && systemDark.matches ? 'dark' : 'light';
+  }
+  function applyTheme(name) {
+    if (name !== 'light' && name !== 'dark') return;
+    document.documentElement.setAttribute('data-theme', name);
+    store.set('bssuika.theme', name);
+    updateThemeUI();
+  }
+  function updateThemeUI() {
+    const t = currentTheme();
+    for (const key in themeButtons) themeButtons[key].setAttribute('aria-pressed', String(key === t));
+    const bg = getComputedStyle(document.documentElement).getPropertyValue('--bg-top').trim();
+    if (bg) document.querySelectorAll('meta[name="theme-color"]').forEach(m => m.setAttribute('content', bg));
+  }
+  for (const key in themeButtons) themeButtons[key].addEventListener('click', () => applyTheme(key));
+  if (systemDark) systemDark.addEventListener('change', updateThemeUI);
 
   // ---- Pontuação e HUD ----
   function addScore(p, x, y) {
@@ -953,6 +987,7 @@ canvas#game {
   canvas.addEventListener('pointercancel', () => { pressed = false; });
   window.addEventListener('keydown', e => {
     if (e.key === 'm' || e.key === 'M') { applyMode(modeName === 'molenga' ? 'rigido' : 'molenga'); return; }
+    if (e.key === 't' || e.key === 'T') { applyTheme(currentTheme() === 'dark' ? 'light' : 'dark'); return; }
     if (over) { if (e.key === 'Enter' || e.key === ' ') { restart(); e.preventDefault(); } return; }
     if (!preview) return;
     if (e.key === 'ArrowLeft') { preview.x = clampX(preview.x - 12, preview.r); pointerX = preview.x; }
@@ -974,6 +1009,7 @@ canvas#game {
   updateNext();
   new ResizeObserver(() => layout()).observe(canvas);
   applyMode(modeName);
+  updateThemeUI();
   if (window.matchMedia) matchMedia('(prefers-color-scheme: dark)').addEventListener('change', readTheme);
   new MutationObserver(readTheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
   layout();

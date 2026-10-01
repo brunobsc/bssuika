@@ -8,6 +8,8 @@ Suika Game em HTML + JavaScript, feito para rodar no iPhone como app da Tela de 
 
 ## Modos de física
 
+Abaixo do seletor de modo há o seletor de tema ☀️/🌙 (salvo no aparelho; tecla **T** alterna). Sem escolha, segue o tema do sistema.
+
 O seletor no topo troca só os parâmetros de física; pote, tamanhos, pontuação e regra de fim de jogo são iguais nos dois. A escolha fica salva no aparelho e a tecla **M** alterna.
 
 | | Molenga | Rígido |
