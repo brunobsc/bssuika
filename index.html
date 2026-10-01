@@ -435,14 +435,45 @@ canvas#game {
     buildWalls();
     for (const b of live) b.over = 0;
 
-    if (!oldJar || oldJar.w !== jw) {
+    if (!oldJar) {
       buildSprites();
-      if (live.size || preview) restart();
+    } else if (oldJar.w !== jw) {
+      buildSprites();
+      remapWorld(oldJar, jw / oldJar.w);
     } else if (oldJar.bottom !== bottom || oldJar.x !== margin) {
       const dx = margin - oldJar.x, dy = bottom - oldJar.bottom;
       for (const b of live) Body.translate(b, { x: dx, y: dy });
       if (preview) preview.x = clampX(preview.x + dx, preview.r);
+      if (pointerX !== null) pointerX += dx;
     }
+  }
+
+  // A janela mudou de tamanho: recria cada fruta na nova escala, na mesma posição relativa
+  // ao pote, mantendo velocidade e rotação. A partida continua de onde estava.
+  function remapWorld(oldJar, s) {
+    const mapX = x => jar.x + (x - oldJar.x) * s;
+    const mapY = y => jar.bottom + (y - oldJar.bottom) * s;
+    if (over) {
+      for (const b of [...live]) removeFruit(b);
+    } else {
+      for (const o of [...live]) {
+        removeFruit(o);
+        const n = makeFruit(o.kind, mapX(o.position.x), mapY(o.position.y));
+        Body.setAngle(n, o.angle);
+        Body.setVelocity(n, { x: o.velocity.x * s, y: o.velocity.y * s });
+        Body.setAngularVelocity(n, o.angularVelocity);
+        n.landed = o.landed;
+        n.born = o.born;
+      }
+      merges = [];
+    }
+    if (preview) {
+      preview.r = sprites[preview.kind].r;
+      preview.x = clampX(mapX(preview.x), preview.r);
+    }
+    if (pointerX !== null) pointerX = mapX(pointerX);
+    particles = [];
+    popups = [];
   }
 
   // ---- Frutas ----
