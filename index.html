@@ -138,6 +138,27 @@ body {
 }
 .badge.pop { animation: pop .3s cubic-bezier(.2, 1.4, .4, 1); }
 @keyframes pop { from { transform: scale(.4); } to { transform: scale(1); } }
+.mode { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.seg {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--chain-bg);
+}
+.seg button {
+  font: 800 12px/1 var(--font-body);
+  letter-spacing: .02em;
+  color: var(--ink-soft);
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: background .2s, color .2s;
+}
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+.seg button:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 canvas#game {
   flex: 1;
   min-height: 0;
@@ -247,6 +268,13 @@ canvas#game {
       <span id="score" class="score">0</span>
       <span id="best" class="best">Melhor: 0</span>
     </div>
+    <div class="mode">
+      <span class="label">Modo</span>
+      <div class="seg" role="group" aria-label="Modo de jogo">
+        <button id="mode-molenga" type="button" aria-pressed="false" title="Física do suikagame.com">Molenga</button>
+        <button id="mode-rigido" type="button" aria-pressed="false" title="Física original do BS Suika">Rígido</button>
+      </div>
+    </div>
     <div class="next-block">
       <span class="label">Próxima</span>
       <div id="next" class="badge" aria-live="polite" aria-label="Próxima fruta"></div>
@@ -294,7 +322,30 @@ canvas#game {
   ];
   const LAST = FRUITS.length - 1;
   const DROP_WEIGHTS = [32, 28, 20, 13, 7];
-  const DROP_DELAY = 0.55;
+  // Modos de física. Só os parâmetros mudam; pote, tamanhos e regras continuam iguais.
+  // "molenga" reproduz os valores do suikagame.com (Cocos Creator + Box2D): gravidade 300 px/s²
+  // com gravityScale 3, fruta solta com 800 px/s para baixo, atrito 1, elasticidade 0,1, sem
+  // amortecimento, giro zerado ao tocar outra fruta, fusão nasce na fruta de baixo com 100 px/s
+  // e cresce em 0,5 s. Velocidades e gravidade são escaladas pela largura do pote (720 px lá).
+  const MODES = {
+    molenga: {
+      label: 'Molenga', refWidth: 720,
+      gravity: 0.9, dropVelocity: 800, mergeVelocity: 100,
+      friction: 1, frictionStatic: 1, frictionAir: 0.002, restitution: 0.1,
+      wallFriction: 0.2, wallRestitution: 0,
+      zeroSpinOnContact: true, mergeAtLower: true, sleeping: true,
+      popFrom: 0, popDuration: 0.5, dropDelay: 0.5,
+    },
+    rigido: {
+      label: 'Rígido', refWidth: 0,
+      gravity: 1.4, dropVelocity: 0, mergeVelocity: 0,
+      friction: 0.5, frictionStatic: 0.8, frictionAir: 0.01, restitution: 0.1,
+      wallFriction: 0.5, wallRestitution: 0.1,
+      zeroSpinOnContact: false, mergeAtLower: false, sleeping: false,
+      popFrom: 0.55, popDuration: 0.2, dropDelay: 0.55,
+    },
+  };
+  const DEFAULT_MODE = 'molenga';
   const GAME_OVER_GRACE = 1.2;
   const WATERMELON_BONUS = 100;
   const STEP = 1000 / 60;
@@ -321,13 +372,14 @@ canvas#game {
     set(key, value) { try { localStorage.setItem(key, value); } catch (e) {} },
   };
 
-  const { Engine, Bodies, Body, Composite, Events } = Matter;
+  const { Engine, Bodies, Body, Composite, Events, Sleeping } = Matter;
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d', { alpha: false });
   const $ = id => document.getElementById(id);
   const scoreEl = $('score'), bestEl = $('best'), nextEl = $('next'), chainEl = $('chain');
   const overlay = $('overlay'), finalEl = $('final'), finalSubEl = $('final-sub'), restartBtn = $('restart');
   const tip = $('tip'), tipClose = $('tip-close');
+  const modeButtons = { molenga: $('mode-molenga'), rigido: $('mode-rigido') };
 
   // ---- Estado ----
   let W = 0, H = 0, dpr = 1;
@@ -337,7 +389,10 @@ canvas#game {
   let canvasTop = 0, bgGradient = null;
   const MAX_STEPS = 4;
   const engine = Engine.create({ positionIterations: 10, velocityIterations: 8 });
-  engine.gravity.y = 1.4;
+  let modeName = MODES[store.get('bssuika.mode')] ? store.get('bssuika.mode') : DEFAULT_MODE;
+  let mode = MODES[modeName];
+  const modeScale = () => (mode.refWidth && jar ? jar.w / mode.refWidth : 1);
+  const gravityFor = m => (m.refWidth && jar ? m.gravity * jar.w / m.refWidth : m.gravity);
   let walls = [];
   const live = new Set();
   let merges = [];
@@ -410,7 +465,7 @@ canvas#game {
 
   function buildWalls() {
     if (walls.length) Composite.remove(engine.world, walls);
-    const opts = { isStatic: true, friction: 0.5, restitution: 0.1, label: 'wall' };
+    const opts = { isStatic: true, friction: mode.wallFriction, restitution: mode.wallRestitution, label: 'wall' };
     const thick = 60;
     const top = jar.y - 2000;
     const height = jar.bottom + thick - top;
@@ -449,6 +504,7 @@ canvas#game {
     corner = Math.min(16, jw * 0.05);
     readTheme();
     buildWalls();
+    engine.gravity.y = gravityFor(mode);
     for (const b of live) b.over = 0;
 
     if (!oldJar) {
@@ -498,7 +554,8 @@ canvas#game {
   function makeFruit(k, x, y) {
     const r = sprites[k].r;
     const b = Bodies.circle(x, y, r, {
-      restitution: 0.1, friction: 0.5, frictionStatic: 0.8, frictionAir: 0.01, density: 0.0015, label: 'fruit',
+      restitution: mode.restitution, friction: mode.friction, frictionStatic: mode.frictionStatic,
+      frictionAir: mode.frictionAir, density: 0.0015, label: 'fruit',
     });
     b.kind = k; b.r = r; b.landed = false; b.over = 0; b.merging = false; b.born = time; b.dieAt = null;
     b.px = x; b.py = y; b.pa = 0;
@@ -524,27 +581,32 @@ canvas#game {
 
   function drop() {
     if (!canDrop || over || !preview) return;
-    makeFruit(preview.kind, preview.x, dropY);
+    const b = makeFruit(preview.kind, preview.x, dropY);
+    if (mode.dropVelocity) Body.setVelocity(b, { x: 0, y: mode.dropVelocity * modeScale() / 60 });
     preview = null;
     canDrop = false;
-    spawnAt = time + DROP_DELAY;
+    spawnAt = time + mode.dropDelay;
     vibrate(8);
   }
 
-  function onContact(e) {
+  function onContact(e, started) {
     for (const { bodyA, bodyB } of e.pairs) {
       const a = bodyA.label === 'fruit' ? bodyA : null;
       const b = bodyB.label === 'fruit' ? bodyB : null;
       if (a) a.landed = true;
       if (b) b.landed = true;
+      if (started && mode.zeroSpinOnContact && a && b) {
+        Body.setAngularVelocity(a, 0);
+        Body.setAngularVelocity(b, 0);
+      }
       if (a && b && a.kind === b.kind && !a.merging && !b.merging && !a.dieAt && !b.dieAt) {
         a.merging = b.merging = true;
         merges.push([a, b]);
       }
     }
   }
-  Events.on(engine, 'collisionStart', onContact);
-  Events.on(engine, 'collisionActive', onContact);
+  Events.on(engine, 'collisionStart', e => onContact(e, true));
+  Events.on(engine, 'collisionActive', e => onContact(e, false));
 
   function processMerges() {
     if (!merges.length) return;
@@ -560,8 +622,11 @@ canvas#game {
       removeFruit(b);
       burst(mx, my, k, a.r);
       if (k < LAST) {
-        const f = makeFruit(k + 1, mx, (my + lower.position.y) / 2);
+        const f = mode.mergeAtLower
+          ? makeFruit(k + 1, lower.position.x, lower.position.y)
+          : makeFruit(k + 1, mx, (my + lower.position.y) / 2);
         f.landed = true;
+        if (mode.mergeVelocity) Body.setVelocity(f, { x: 0, y: mode.mergeVelocity * modeScale() / 60 });
         addScore(points(k + 1), mx, my);
         if (k + 1 > biggest) { biggest = k + 1; updateChain(); }
         vibrate(15);
@@ -569,8 +634,30 @@ canvas#game {
         addScore(WATERMELON_BONUS, mx, my);
         vibrate([20, 30, 20]);
       }
+      // Matter não acorda vizinhos quando um corpo some; sem isso frutas ficariam flutuando.
+      if (mode.sleeping) for (const b of live) Sleeping.set(b, false);
     }
   }
+
+  // ---- Modo de jogo ----
+  function applyMode(name) {
+    if (!MODES[name]) name = DEFAULT_MODE;
+    modeName = name;
+    mode = MODES[name];
+    store.set('bssuika.mode', name);
+    engine.enableSleeping = !!mode.sleeping;
+    engine.gravity.y = gravityFor(mode);
+    for (const b of live) {
+      b.friction = mode.friction;
+      b.frictionStatic = mode.frictionStatic;
+      b.frictionAir = mode.frictionAir;
+      b.restitution = mode.restitution;
+      if (!mode.sleeping) Sleeping.set(b, false);
+    }
+    for (const w of walls) { w.friction = mode.wallFriction; w.restitution = mode.wallRestitution; }
+    for (const key in modeButtons) modeButtons[key].setAttribute('aria-pressed', String(key === name));
+  }
+  for (const key in modeButtons) modeButtons[key].addEventListener('click', () => applyMode(key));
 
   // ---- Pontuação e HUD ----
   function addScore(p, x, y) {
@@ -782,7 +869,7 @@ canvas#game {
         if (scale <= 0) continue;
       } else {
         const age = time - b.born;
-        if (age < 0.2) scale = 0.55 + 0.45 * easeOutBack(age / 0.2);
+        if (age < mode.popDuration) scale = mode.popFrom + (1 - mode.popFrom) * easeOutBack(age / mode.popDuration);
       }
       const x = b.px + (b.position.x - b.px) * alpha;
       const y = b.py + (b.position.y - b.py) * alpha;
@@ -865,6 +952,7 @@ canvas#game {
   });
   canvas.addEventListener('pointercancel', () => { pressed = false; });
   window.addEventListener('keydown', e => {
+    if (e.key === 'm' || e.key === 'M') { applyMode(modeName === 'molenga' ? 'rigido' : 'molenga'); return; }
     if (over) { if (e.key === 'Enter' || e.key === ' ') { restart(); e.preventDefault(); } return; }
     if (!preview) return;
     if (e.key === 'ArrowLeft') { preview.x = clampX(preview.x - 12, preview.r); pointerX = preview.x; }
@@ -885,6 +973,7 @@ canvas#game {
   updateChain();
   updateNext();
   new ResizeObserver(() => layout()).observe(canvas);
+  applyMode(modeName);
   if (window.matchMedia) matchMedia('(prefers-color-scheme: dark)').addEventListener('change', readTheme);
   new MutationObserver(readTheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
   layout();
