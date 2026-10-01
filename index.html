@@ -334,17 +334,25 @@ try { var t = localStorage.getItem('bssuika.theme'); if (t === 'light' || t === 
   const LAST = FRUITS.length - 1;
   const DROP_WEIGHTS = [32, 28, 20, 13, 7];
   // Modos de física. Só os parâmetros mudam; pote, tamanhos e regras continuam iguais.
-  // "molenga" reproduz os valores do suikagame.com (Cocos Creator + Box2D): gravidade 300 px/s²
-  // com gravityScale 3, fruta solta com 800 px/s para baixo, atrito 1, elasticidade 0,1, sem
+  // "molenga" reproduz o suikagame.com (Cocos Creator + Box2D): gravidade 300 px/s² com
+  // gravityScale 3, fruta solta com 800 px/s para baixo, atrito Box2D 1, elasticidade 0,1, sem
   // amortecimento, giro zerado ao tocar outra fruta, fusão nasce na fruta de baixo com 100 px/s
   // e cresce em 0,5 s. Velocidades e gravidade são escaladas pela largura do pote (720 px lá).
+  //
+  // O atrito do Matter não é o de Coulomb: `friction` é uma desaceleração fixa (px/passo²) e
+  // friction×frictionStatic×5 é um limiar abaixo do qual todo deslize é cancelado. Para ficar
+  // equivalente ao μ=1 do Box2D (desliza em rampas acima de 45°), o atrito é derivado da
+  // gravidade: friction = 0,7 × g por passo. A elasticidade do Matter também sai fraca (o alvo
+  // do quique é recalculado a cada iteração do solver e converge para zero), então o Molenga
+  // emula a restituição do Box2D: no início do contato mede a velocidade de aproximação e, se
+  // passar de `bounceThreshold` px/s (1 m/s no Box2D), garante separação de 0,1 × impacto.
   const MODES = {
     molenga: {
       label: 'Molenga', refWidth: 720,
       gravity: 0.9, dropVelocity: 800, mergeVelocity: 100,
-      friction: 1, frictionStatic: 1, frictionAir: 0.002, restitution: 0.1,
-      wallFriction: 0.2, wallRestitution: 0,
-      zeroSpinOnContact: true, mergeAtLower: true, sleeping: true,
+      frictionFromGravity: 0.7, frictionStatic: 0.5, frictionAir: 0.001, restitution: 0.1,
+      wallFrictionFactor: 0.45, wallRestitution: 0, emulateBounce: true, bounceThreshold: 32,
+      zeroSpinOnContact: true, mergeAtLower: true, sleeping: false,
       popFrom: 0, popDuration: 0.5, dropDelay: 0.5,
     },
     rigido: {
@@ -405,9 +413,13 @@ try { var t = localStorage.getItem('bssuika.theme'); if (t === 'light' || t === 
   let mode = MODES[modeName];
   const modeScale = () => (mode.refWidth && jar ? jar.w / mode.refWidth : 1);
   const gravityFor = m => (m.refWidth && jar ? m.gravity * jar.w / m.refWidth : m.gravity);
+  const STEP_SQ = (1000 / 60) * (1000 / 60) * 0.001; // px/passo² por unidade de gravity.y
+  const fruitFriction = () => (mode.frictionFromGravity ? mode.frictionFromGravity * gravityFor(mode) * STEP_SQ : mode.friction);
+  const wallFriction = () => (mode.wallFrictionFactor ? mode.wallFrictionFactor * fruitFriction() : mode.wallFriction);
   let walls = [];
   const live = new Set();
   let merges = [];
+  let bounces = [];
   let preview = null, nextKind = randomDroppable(), canDrop = false, spawnAt = 0;
   let pointerX = null, pressed = false;
   let score = 0, best = parseInt(store.get('bssuika.best') || '0', 10) || 0;
@@ -477,7 +489,7 @@ try { var t = localStorage.getItem('bssuika.theme'); if (t === 'light' || t === 
 
   function buildWalls() {
     if (walls.length) Composite.remove(engine.world, walls);
-    const opts = { isStatic: true, friction: mode.wallFriction, restitution: mode.wallRestitution, label: 'wall' };
+    const opts = { isStatic: true, friction: wallFriction(), restitution: mode.wallRestitution, label: 'wall' };
     const thick = 60;
     const top = jar.y - 2000;
     const height = jar.bottom + thick - top;
@@ -516,7 +528,7 @@ try { var t = localStorage.getItem('bssuika.theme'); if (t === 'light' || t === 
     corner = Math.min(16, jw * 0.05);
     readTheme();
     buildWalls();
-    engine.gravity.y = gravityFor(mode);
+    refreshPhysics();
     for (const b of live) b.over = 0;
 
     if (!oldJar) {
@@ -532,7 +544,7 @@ try { var t = localStorage.getItem('bssuika.theme'); if (t === 'light' || t === 
     }
   }
 
-  function syncPrev(b) { b.px = b.position.x; b.py = b.position.y; b.pa = b.angle; }
+  function syncPrev(b) { b.px = b.position.x; b.py = b.position.y; b.pa = b.angle; b.vx0 = b.velocity.x; b.vy0 = b.velocity.y; }
 
   // A janela mudou de tamanho: recria cada fruta na nova escala, na mesma posição relativa
   // ao pote, mantendo velocidade e rotação. A partida continua de onde estava.
@@ -552,6 +564,7 @@ try { var t = localStorage.getItem('bssuika.theme'); if (t === 'light' || t === 
         n.born = o.born;
       }
       merges = [];
+      bounces = [];
     }
     if (preview) {
       preview.r = sprites[preview.kind].r;
@@ -566,11 +579,11 @@ try { var t = localStorage.getItem('bssuika.theme'); if (t === 'light' || t === 
   function makeFruit(k, x, y) {
     const r = sprites[k].r;
     const b = Bodies.circle(x, y, r, {
-      restitution: mode.restitution, friction: mode.friction, frictionStatic: mode.frictionStatic,
+      restitution: mode.restitution, friction: fruitFriction(), frictionStatic: mode.frictionStatic,
       frictionAir: mode.frictionAir, density: 0.0015, label: 'fruit',
     });
     b.kind = k; b.r = r; b.landed = false; b.over = 0; b.merging = false; b.born = time; b.dieAt = null;
-    b.px = x; b.py = y; b.pa = 0;
+    b.px = x; b.py = y; b.pa = 0; b.vx0 = 0; b.vy0 = 0;
     Composite.add(engine.world, b);
     live.add(b);
     return b;
@@ -602,7 +615,8 @@ try { var t = localStorage.getItem('bssuika.theme'); if (t === 'light' || t === 
   }
 
   function onContact(e, started) {
-    for (const { bodyA, bodyB } of e.pairs) {
+    for (const pair of e.pairs) {
+      const { bodyA, bodyB } = pair;
       const a = bodyA.label === 'fruit' ? bodyA : null;
       const b = bodyB.label === 'fruit' ? bodyB : null;
       if (a) a.landed = true;
@@ -611,11 +625,42 @@ try { var t = localStorage.getItem('bssuika.theme'); if (t === 'light' || t === 
         Body.setAngularVelocity(a, 0);
         Body.setAngularVelocity(b, 0);
       }
+      if (started && mode.emulateBounce && (a || b)) queueBounce(pair);
       if (a && b && a.kind === b.kind && !a.merging && !b.merging && !a.dieAt && !b.dieAt) {
         a.merging = b.merging = true;
         merges.push([a, b]);
       }
     }
+  }
+  // Usa a velocidade capturada antes do passo (vx0/vy0), que é a de impacto; o solver já
+  // pode ter zerado a velocidade normal quando o evento chega.
+  function queueBounce(pair) {
+    const A = pair.bodyA, B = pair.bodyB;
+    let nx = pair.collision.normal.x, ny = pair.collision.normal.y;
+    const dx = A.position.x - B.position.x, dy = A.position.y - B.position.y;
+    if (nx * dx + ny * dy < 0) { nx = -nx; ny = -ny; }
+    const vAx = A.isStatic ? 0 : (A.vx0 || 0), vAy = A.isStatic ? 0 : (A.vy0 || 0);
+    const vBx = B.isStatic ? 0 : (B.vx0 || 0), vBy = B.isStatic ? 0 : (B.vy0 || 0);
+    const rel = (vAx - vBx) * nx + (vAy - vBy) * ny;
+    const threshold = mode.bounceThreshold * modeScale() / 60;
+    if (rel >= -threshold) return;
+    bounces.push({ A, B, nx, ny, target: -rel * mode.restitution });
+  }
+  function applyBounces() {
+    for (const q of bounces) {
+      const { A, B, nx, ny, target } = q;
+      if ((A.label === 'fruit' && !live.has(A)) || (B.label === 'fruit' && !live.has(B))) continue;
+      const invA = A.isStatic ? 0 : A.inverseMass, invB = B.isStatic ? 0 : B.inverseMass;
+      const invSum = invA + invB;
+      if (!invSum) continue;
+      const cur = (A.velocity.x - B.velocity.x) * nx + (A.velocity.y - B.velocity.y) * ny;
+      const need = target - cur;
+      if (need <= 0) continue;
+      const fa = invA / invSum, fb = invB / invSum;
+      if (fa) Body.setVelocity(A, { x: A.velocity.x + nx * need * fa, y: A.velocity.y + ny * need * fa });
+      if (fb) Body.setVelocity(B, { x: B.velocity.x - nx * need * fb, y: B.velocity.y - ny * need * fb });
+    }
+    bounces.length = 0;
   }
   Events.on(engine, 'collisionStart', e => onContact(e, true));
   Events.on(engine, 'collisionActive', e => onContact(e, false));
@@ -652,21 +697,27 @@ try { var t = localStorage.getItem('bssuika.theme'); if (t === 'light' || t === 
   }
 
   // ---- Modo de jogo ----
-  function applyMode(name) {
-    if (!MODES[name]) name = DEFAULT_MODE;
-    modeName = name;
-    mode = MODES[name];
-    store.set('bssuika.mode', name);
+  // Reaplica gravidade, atritos e limiares do modo atual (chamado ao trocar de modo e ao
+  // mudar a largura do pote, porque no Molenga eles dependem dela).
+  function refreshPhysics() {
     engine.enableSleeping = !!mode.sleeping;
     engine.gravity.y = gravityFor(mode);
+    const f = fruitFriction(), wf = wallFriction();
     for (const b of live) {
-      b.friction = mode.friction;
+      b.friction = f;
       b.frictionStatic = mode.frictionStatic;
       b.frictionAir = mode.frictionAir;
       b.restitution = mode.restitution;
       if (!mode.sleeping) Sleeping.set(b, false);
     }
-    for (const w of walls) { w.friction = mode.wallFriction; w.restitution = mode.wallRestitution; }
+    for (const w of walls) { w.friction = wf; w.restitution = mode.wallRestitution; }
+  }
+  function applyMode(name) {
+    if (!MODES[name]) name = DEFAULT_MODE;
+    modeName = name;
+    mode = MODES[name];
+    store.set('bssuika.mode', name);
+    refreshPhysics();
     for (const key in modeButtons) modeButtons[key].setAttribute('aria-pressed', String(key === name));
   }
   for (const key in modeButtons) modeButtons[key].addEventListener('click', () => applyMode(key));
@@ -778,7 +829,7 @@ try { var t = localStorage.getItem('bssuika.theme'); if (t === 'light' || t === 
   }
   function restart() {
     for (const b of [...live]) removeFruit(b);
-    merges = []; particles = []; popups = [];
+    merges = []; bounces = []; particles = []; popups = [];
     score = 0; biggest = 0; over = false; isRecord = false; warning = false;
     preview = null; canDrop = false; spawnAt = time; acc = 0;
     nextKind = randomDroppable();
@@ -825,6 +876,7 @@ try { var t = localStorage.getItem('bssuika.theme'); if (t === 'light' || t === 
         if (++steps > MAX_STEPS) { acc = 0; break; }
         for (const b of live) syncPrev(b);
         Engine.update(engine, STEP);
+        applyBounces();
         processMerges();
         time += STEP / 1000;
         acc -= STEP;
