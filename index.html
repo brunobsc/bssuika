@@ -78,6 +78,7 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html, body { height: 100%; margin: 0; }
 body {
   position: fixed;
@@ -410,17 +411,19 @@ canvas#game {
     dpr = Math.min(window.devicePixelRatio || 1, 3);
     const rect = canvas.getBoundingClientRect();
     const w = Math.round(rect.width), h = Math.round(rect.height);
-    if (w < 60 || h < 120) return;
-    const widthChanged = w !== W;
-    const oldBottom = jar ? jar.bottom : null;
+    if (w < 60 || h < 100) return;
+    const oldJar = jar;
     W = w; H = h;
     canvas.width = Math.round(W * dpr);
     canvas.height = Math.round(H * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    const margin = 14;
-    const jw = W - margin * 2;
-    const previewR = FRUITS[4].ratio * jw;
+    // Largura do pote: a tela toda menos as margens, mas nunca mais do que a altura permite
+    // (garante pote com pelo menos 0,9x a largura, mesmo em telas baixas ou deitadas).
+    const previewRatio = FRUITS[4].ratio;
+    const jw = Math.floor(Math.min(W - 28, (H - 50) / (0.9 + previewRatio * 2)));
+    const previewR = previewRatio * jw;
+    const margin = (W - jw) / 2;
     const bottom = H - 6;
     const jh = Math.min(jw * 1.42, bottom - (previewR * 2 + 44));
     const top = bottom - jh;
@@ -430,13 +433,15 @@ canvas#game {
     corner = Math.min(16, jw * 0.05);
     readTheme();
     buildWalls();
+    for (const b of live) b.over = 0;
 
-    if (widthChanged) {
+    if (!oldJar || oldJar.w !== jw) {
       buildSprites();
       if (live.size || preview) restart();
-    } else if (oldBottom !== null && oldBottom !== bottom) {
-      const dy = bottom - oldBottom;
-      for (const b of live) Body.translate(b, { x: 0, y: dy });
+    } else if (oldJar.bottom !== bottom || oldJar.x !== margin) {
+      const dx = margin - oldJar.x, dy = bottom - oldJar.bottom;
+      for (const b of live) Body.translate(b, { x: dx, y: dy });
+      if (preview) preview.x = clampX(preview.x + dx, preview.r);
     }
   }
 
