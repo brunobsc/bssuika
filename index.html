@@ -85,7 +85,7 @@ body {
   inset: 0;
   overflow: hidden;
   overscroll-behavior: none;
-  background: linear-gradient(180deg, var(--bg-top), var(--bg-bottom)) fixed;
+  background: linear-gradient(180deg, var(--bg-top), var(--bg-bottom));
   color: var(--ink);
   font-family: var(--font-body);
   -webkit-user-select: none;
@@ -323,7 +323,7 @@ canvas#game {
 
   const { Engine, Bodies, Body, Composite, Events } = Matter;
   const canvas = document.getElementById('game');
-  const ctx = canvas.getContext('2d');
+  const ctx = canvas.getContext('2d', { alpha: false });
   const $ = id => document.getElementById(id);
   const scoreEl = $('score'), bestEl = $('best'), nextEl = $('next'), chainEl = $('chain');
   const overlay = $('overlay'), finalEl = $('final'), finalSubEl = $('final-sub'), restartBtn = $('restart');
@@ -334,6 +334,8 @@ canvas#game {
   let jar = null, dropY = 0, dangerY = 0, corner = 16;
   let sprites = [];
   let theme = {};
+  let canvasTop = 0, bgGradient = null;
+  const MAX_STEPS = 4;
   const engine = Engine.create({ positionIterations: 10, velocityIterations: 8 });
   engine.gravity.y = 1.4;
   let walls = [];
@@ -355,7 +357,20 @@ canvas#game {
     theme = {
       jar: v('--jar-fill'), rim: v('--rim'), guide: v('--guide'),
       danger: v('--danger'), dangerHot: v('--danger-hot'), popup: v('--popup'),
+      bgTop: v('--bg-top'), bgBottom: v('--bg-bottom'),
+      popupFont: `800 20px ${v('--font-display')}`,
     };
+    buildBackground();
+  }
+
+  // O canvas é opaco (mais barato de compor na GPU), então ele mesmo desenha o trecho
+  // do degradê da página que ficaria atrás dele.
+  function buildBackground() {
+    if (!W || !H) return;
+    const viewportH = Math.max(window.innerHeight || H, H);
+    bgGradient = ctx.createLinearGradient(0, -canvasTop, 0, viewportH - canvasTop);
+    bgGradient.addColorStop(0, theme.bgTop || '#fff4e3');
+    bgGradient.addColorStop(1, theme.bgBottom || '#ffd9b3');
   }
 
   function buildSprites() {
@@ -414,6 +429,7 @@ canvas#game {
     if (w < 60 || h < 100) return;
     const oldJar = jar;
     W = w; H = h;
+    canvasTop = rect.top;
     canvas.width = Math.round(W * dpr);
     canvas.height = Math.round(H * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -442,11 +458,13 @@ canvas#game {
       remapWorld(oldJar, jw / oldJar.w);
     } else if (oldJar.bottom !== bottom || oldJar.x !== margin) {
       const dx = margin - oldJar.x, dy = bottom - oldJar.bottom;
-      for (const b of live) Body.translate(b, { x: dx, y: dy });
+      for (const b of live) { Body.translate(b, { x: dx, y: dy }); syncPrev(b); }
       if (preview) preview.x = clampX(preview.x + dx, preview.r);
       if (pointerX !== null) pointerX += dx;
     }
   }
+
+  function syncPrev(b) { b.px = b.position.x; b.py = b.position.y; b.pa = b.angle; }
 
   // A janela mudou de tamanho: recria cada fruta na nova escala, na mesma posição relativa
   // ao pote, mantendo velocidade e rotação. A partida continua de onde estava.
@@ -483,6 +501,7 @@ canvas#game {
       restitution: 0.1, friction: 0.5, frictionStatic: 0.8, frictionAir: 0.01, density: 0.0015, label: 'fruit',
     });
     b.kind = k; b.r = r; b.landed = false; b.over = 0; b.merging = false; b.born = time; b.dieAt = null;
+    b.px = x; b.py = y; b.pa = 0;
     Composite.add(engine.world, b);
     live.add(b);
     return b;
@@ -680,7 +699,10 @@ canvas#game {
     last = ts;
     if (!over) {
       acc += dtms;
+      let steps = 0;
       while (acc >= STEP) {
+        if (++steps > MAX_STEPS) { acc = 0; break; }
+        for (const b of live) syncPrev(b);
         Engine.update(engine, STEP);
         processMerges();
         time += STEP / 1000;
@@ -711,16 +733,15 @@ canvas#game {
 
   function drawFruit(k, x, y, angle, scale) {
     const s = sprites[k];
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.rotate(angle);
-    ctx.scale(scale, scale);
+    const c = Math.cos(angle) * scale, sn = Math.sin(angle) * scale;
+    ctx.setTransform(dpr * c, dpr * sn, -dpr * sn, dpr * c, dpr * x, dpr * y);
     ctx.drawImage(s.canvas, -s.size / 2, -s.size / 2, s.size, s.size);
-    ctx.restore();
   }
 
   function draw() {
-    ctx.clearRect(0, 0, W, H);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (bgGradient) { ctx.fillStyle = bgGradient; ctx.fillRect(0, 0, W, H); } else { ctx.clearRect(0, 0, W, H); }
+    const alpha = over ? 1 : Math.min(acc / STEP, 1);
 
     jarPath(true);
     ctx.fillStyle = theme.jar;
@@ -763,13 +784,18 @@ canvas#game {
         const age = time - b.born;
         if (age < 0.2) scale = 0.55 + 0.45 * easeOutBack(age / 0.2);
       }
-      drawFruit(b.kind, b.position.x, b.position.y, b.angle, scale);
+      const x = b.px + (b.position.x - b.px) * alpha;
+      const y = b.py + (b.position.y - b.py) * alpha;
+      const a = b.pa + (b.angle - b.pa) * alpha;
+      drawFruit(b.kind, x, y, a, scale);
     }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     if (preview && !over) {
       const age = time - preview.born;
       const scale = age < 0.15 ? 0.2 + 0.8 * easeOutBack(age / 0.15) : 1;
       drawFruit(preview.kind, preview.x, dropY, 0, scale);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     }
 
     for (const p of particles) {
@@ -797,7 +823,7 @@ canvas#game {
       ctx.save();
       ctx.globalAlpha = u < 0.5 ? 1 : 1 - (u - 0.5) * 2;
       ctx.fillStyle = theme.popup;
-      ctx.font = `800 20px ${getComputedStyle(document.documentElement).getPropertyValue('--font-display')}`;
+      ctx.font = theme.popupFont;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       const s = Math.min(1, 0.6 + u * 2.5);
