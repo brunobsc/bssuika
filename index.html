@@ -1,0 +1,837 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>BS Suika</title>
+<meta name="description" content="Suika Game: solte frutas no pote e junte duas iguais até chegar na melancia.">
+<meta name="theme-color" content="#ffe3c6" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1c110c" media="(prefers-color-scheme: dark)">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="BS Suika">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" type="image/png" href="icon-180.png">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;800&family=Nunito:wght@700;900&display=swap">
+<style>
+:root {
+  --bg-top: #fff4e3;
+  --bg-bottom: #ffd9b3;
+  --ink: #42291a;
+  --ink-soft: rgba(66, 41, 26, .62);
+  --jar-fill: rgba(255, 255, 255, .38);
+  --rim: #93623f;
+  --guide: rgba(60, 40, 20, .22);
+  --danger: rgba(242, 83, 83, .55);
+  --danger-hot: rgba(240, 40, 40, .95);
+  --card: #fff8ef;
+  --card-shadow: rgba(60, 30, 10, .28);
+  --chain-bg: rgba(255, 255, 255, .5);
+  --accent: #3dae5c;
+  --accent-ink: #ffffff;
+  --record: #d9562e;
+  --scrim: rgba(40, 20, 10, .45);
+  --popup: #42291a;
+  --font-display: "Baloo 2", ui-rounded, "SF Pro Rounded", "Arial Rounded MT Bold", system-ui, sans-serif;
+  --font-body: "Nunito", ui-rounded, "SF Pro Rounded", system-ui, sans-serif;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg-top: #261811;
+    --bg-bottom: #140b07;
+    --ink: #f7e8d8;
+    --ink-soft: rgba(247, 232, 216, .6);
+    --jar-fill: rgba(255, 255, 255, .06);
+    --rim: #b47d4e;
+    --guide: rgba(255, 230, 200, .2);
+    --danger: rgba(255, 110, 110, .55);
+    --danger-hot: rgba(255, 70, 70, .95);
+    --card: #2d1d15;
+    --card-shadow: rgba(0, 0, 0, .55);
+    --chain-bg: rgba(255, 255, 255, .08);
+    --record: #ffa36b;
+    --scrim: rgba(0, 0, 0, .58);
+    --popup: #fff1e2;
+  }
+}
+:root[data-theme="dark"] {
+  --bg-top: #261811;
+  --bg-bottom: #140b07;
+  --ink: #f7e8d8;
+  --ink-soft: rgba(247, 232, 216, .6);
+  --jar-fill: rgba(255, 255, 255, .06);
+  --rim: #b47d4e;
+  --guide: rgba(255, 230, 200, .2);
+  --danger: rgba(255, 110, 110, .55);
+  --danger-hot: rgba(255, 70, 70, .95);
+  --card: #2d1d15;
+  --card-shadow: rgba(0, 0, 0, .55);
+  --chain-bg: rgba(255, 255, 255, .08);
+  --record: #ffa36b;
+  --scrim: rgba(0, 0, 0, .58);
+  --popup: #fff1e2;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+  background: linear-gradient(180deg, var(--bg-top), var(--bg-bottom)) fixed;
+  color: var(--ink);
+  font-family: var(--font-body);
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-text-size-adjust: 100%;
+  touch-action: none;
+}
+#app {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: env(safe-area-inset-top, 0px) 0 env(safe-area-inset-bottom, 0px);
+}
+.hud {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 10px 20px 0;
+}
+.label {
+  font: 900 11px/1 var(--font-body);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.score-block { display: flex; flex-direction: column; gap: 4px; }
+.score {
+  font: 800 44px/1 var(--font-display);
+  font-variant-numeric: tabular-nums;
+  transition: transform .15s ease-out;
+  transform-origin: left center;
+}
+.score.bump { transform: scale(1.12); }
+.best {
+  font: 700 13px/1.2 var(--font-body);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-soft);
+}
+.next-block { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.badge {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 25px;
+  line-height: 1;
+  box-shadow: inset 0 0 0 3px rgba(0, 0, 0, .18);
+}
+.badge.pop { animation: pop .3s cubic-bezier(.2, 1.4, .4, 1); }
+@keyframes pop { from { transform: scale(.4); } to { transform: scale(1); } }
+canvas#game {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  display: block;
+  touch-action: none;
+}
+.chain {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 auto 10px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: var(--chain-bg);
+  width: max-content;
+  max-width: calc(100% - 32px);
+}
+.chain .dot {
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  line-height: 1;
+  box-shadow: inset 0 0 0 1.5px rgba(0, 0, 0, .15);
+  transition: filter .3s, opacity .3s, transform .3s;
+}
+.chain .dot.locked { filter: grayscale(1); opacity: .35; }
+.overlay {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: var(--scrim);
+  animation: fade .3s;
+  z-index: 10;
+}
+.card {
+  background: var(--card);
+  border-radius: 28px;
+  padding: 28px;
+  width: min(100%, 320px);
+  text-align: center;
+  box-shadow: 0 12px 40px var(--card-shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  animation: rise .4s cubic-bezier(.2, 1.2, .4, 1);
+}
+.card .emoji { font-size: 60px; line-height: 1; }
+.card h2 { margin: 0; font: 800 30px/1.1 var(--font-display); }
+.card .final { font: 800 52px/1 var(--font-display); font-variant-numeric: tabular-nums; }
+.card .sub { font: 700 16px/1.2 var(--font-body); color: var(--ink-soft); }
+.card .sub.record { color: var(--record); }
+.btn {
+  font: 800 19px/1 var(--font-display);
+  color: var(--accent-ink);
+  background: var(--accent);
+  border: 0;
+  border-radius: 999px;
+  padding: 15px 20px;
+  width: 100%;
+  cursor: pointer;
+  margin-top: 4px;
+}
+.btn:focus-visible, .tip button:focus-visible { outline: 3px solid var(--ink); outline-offset: 3px; }
+.tip {
+  position: fixed;
+  left: 16px;
+  right: 16px;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 14px);
+  background: var(--card);
+  color: var(--ink);
+  border-radius: 16px;
+  padding: 12px 14px;
+  font: 700 13px/1.35 var(--font-body);
+  box-shadow: 0 8px 30px var(--card-shadow);
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  z-index: 5;
+  animation: rise .4s cubic-bezier(.2, 1.2, .4, 1);
+}
+.tip button {
+  flex: none;
+  font: 800 13px/1 var(--font-body);
+  color: var(--accent-ink);
+  background: var(--accent);
+  border: 0;
+  border-radius: 999px;
+  padding: 9px 12px;
+  cursor: pointer;
+}
+@keyframes fade { from { opacity: 0; } }
+@keyframes rise { from { transform: scale(.85); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .card, .overlay, .badge.pop, .tip { animation: none; }
+  .score, .chain .dot { transition: none; }
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <header class="hud">
+    <div class="score-block">
+      <span class="label">Pontos</span>
+      <span id="score" class="score">0</span>
+      <span id="best" class="best">Melhor: 0</span>
+    </div>
+    <div class="next-block">
+      <span class="label">Próxima</span>
+      <div id="next" class="badge" aria-live="polite" aria-label="Próxima fruta"></div>
+    </div>
+  </header>
+  <canvas id="game" aria-label="Pote do Suika. Arraste para posicionar a fruta e solte para deixá-la cair."></canvas>
+  <footer id="chain" class="chain" aria-label="Cadeia de frutas"></footer>
+</div>
+
+<div id="overlay" class="overlay" hidden>
+  <div class="card" role="dialog" aria-modal="true" aria-labelledby="over-title">
+    <div class="emoji">🍉</div>
+    <h2 id="over-title">Fim de jogo</h2>
+    <div>
+      <div id="final" class="final">0</div>
+      <div id="final-sub" class="sub">Melhor: 0</div>
+    </div>
+    <button id="restart" class="btn" type="button">Jogar de novo</button>
+  </div>
+</div>
+
+<div id="tip" class="tip" hidden>
+  <span>Para instalar como app: toque em <strong>Compartilhar</strong> (ícone da seta) e em <strong>Adicionar à Tela de Início</strong>.</span>
+  <button id="tip-close" type="button">Entendi</button>
+</div>
+
+<script src="vendor/matter.min.js"></script>
+<script>
+(() => {
+  'use strict';
+
+  // ---- Frutas: da menor para a maior. Juntar duas iguais vira a próxima. ----
+  const FRUITS = [
+    { name: 'Cereja',   emoji: '🍒', ratio: 0.048, rgb: [0.89, 0.20, 0.30] },
+    { name: 'Morango',  emoji: '🍓', ratio: 0.062, rgb: [1.00, 0.37, 0.48] },
+    { name: 'Uva',      emoji: '🍇', ratio: 0.078, rgb: [0.63, 0.36, 0.79] },
+    { name: 'Limão',    emoji: '🍋', ratio: 0.094, rgb: [0.97, 0.82, 0.24] },
+    { name: 'Laranja',  emoji: '🍊', ratio: 0.112, rgb: [1.00, 0.60, 0.18] },
+    { name: 'Maçã',     emoji: '🍎', ratio: 0.132, rgb: [0.94, 0.23, 0.28] },
+    { name: 'Pera',     emoji: '🍐', ratio: 0.152, rgb: [0.72, 0.83, 0.30] },
+    { name: 'Pêssego',  emoji: '🍑', ratio: 0.176, rgb: [1.00, 0.70, 0.52] },
+    { name: 'Abacaxi',  emoji: '🍍', ratio: 0.202, rgb: [0.95, 0.76, 0.31] },
+    { name: 'Melão',    emoji: '🍈', ratio: 0.234, rgb: [0.56, 0.84, 0.58] },
+    { name: 'Melancia', emoji: '🍉', ratio: 0.268, rgb: [0.24, 0.68, 0.36] },
+  ];
+  const LAST = FRUITS.length - 1;
+  const DROP_WEIGHTS = [32, 28, 20, 13, 7];
+  const DROP_DELAY = 0.55;
+  const GAME_OVER_GRACE = 1.2;
+  const WATERMELON_BONUS = 100;
+  const STEP = 1000 / 60;
+  const EMOJI_FONT = '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif';
+
+  const color = (k, mul = 1) => {
+    const [r, g, b] = FRUITS[k].rgb;
+    return `rgb(${Math.round(r * 255 * mul)}, ${Math.round(g * 255 * mul)}, ${Math.round(b * 255 * mul)})`;
+  };
+  const points = k => (k + 1) * (k + 2) / 2;
+  const randomDroppable = () => {
+    let roll = Math.random() * DROP_WEIGHTS.reduce((a, b) => a + b, 0);
+    for (let i = 0; i < DROP_WEIGHTS.length; i++) {
+      if (roll < DROP_WEIGHTS[i]) return i;
+      roll -= DROP_WEIGHTS[i];
+    }
+    return 0;
+  };
+  const fmt = n => n.toLocaleString('pt-BR');
+  const clamp = (v, a, b) => Math.min(Math.max(v, a), b);
+  const vibrate = pattern => { try { navigator.vibrate && navigator.vibrate(pattern); } catch (e) {} };
+  const store = {
+    get(key) { try { return localStorage.getItem(key); } catch (e) { return null; } },
+    set(key, value) { try { localStorage.setItem(key, value); } catch (e) {} },
+  };
+
+  const { Engine, Bodies, Body, Composite, Events } = Matter;
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const $ = id => document.getElementById(id);
+  const scoreEl = $('score'), bestEl = $('best'), nextEl = $('next'), chainEl = $('chain');
+  const overlay = $('overlay'), finalEl = $('final'), finalSubEl = $('final-sub'), restartBtn = $('restart');
+  const tip = $('tip'), tipClose = $('tip-close');
+
+  // ---- Estado ----
+  let W = 0, H = 0, dpr = 1;
+  let jar = null, dropY = 0, dangerY = 0, corner = 16;
+  let sprites = [];
+  let theme = {};
+  const engine = Engine.create({ positionIterations: 10, velocityIterations: 8 });
+  engine.gravity.y = 1.4;
+  let walls = [];
+  const live = new Set();
+  let merges = [];
+  let preview = null, nextKind = randomDroppable(), canDrop = false, spawnAt = 0;
+  let pointerX = null, pressed = false;
+  let score = 0, best = parseInt(store.get('bssuika.best') || '0', 10) || 0;
+  let biggest = 0, over = false, isRecord = false, warning = false, warnPhase = 0;
+  let particles = [], popups = [];
+  let time = 0, last = 0, acc = 0;
+  const demo = /[?&]demo/.test(location.search);
+  let demoLeft = demo ? 18 : 0, demoNext = 0.3;
+
+  // ---- Layout ----
+  function readTheme() {
+    const cs = getComputedStyle(document.documentElement);
+    const v = name => cs.getPropertyValue(name).trim();
+    theme = {
+      jar: v('--jar-fill'), rim: v('--rim'), guide: v('--guide'),
+      danger: v('--danger'), dangerHot: v('--danger-hot'), popup: v('--popup'),
+    };
+  }
+
+  function buildSprites() {
+    sprites = FRUITS.map((f, k) => {
+      const r = Math.round(f.ratio * jar.w);
+      const pad = 3;
+      const size = (r + pad) * 2;
+      const c = document.createElement('canvas');
+      c.width = Math.ceil(size * dpr);
+      c.height = Math.ceil(size * dpr);
+      const g = c.getContext('2d');
+      g.scale(dpr, dpr);
+      g.translate(r + pad, r + pad);
+      const lw = Math.max(1.5, r * 0.07);
+      g.beginPath();
+      g.arc(0, 0, r - lw / 2, 0, Math.PI * 2);
+      g.fillStyle = color(k);
+      g.fill();
+      g.lineWidth = lw;
+      g.strokeStyle = color(k, 0.72);
+      g.stroke();
+      g.save();
+      g.translate(-r * 0.28, -r * 0.45);
+      g.rotate(-Math.PI / 5);
+      g.beginPath();
+      g.ellipse(0, 0, r * 0.375, r * 0.21, 0, 0, Math.PI * 2);
+      g.fillStyle = 'rgba(255,255,255,0.33)';
+      g.fill();
+      g.restore();
+      g.font = `${Math.round(r * 1.05)}px ${EMOJI_FONT}`;
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.fillText(f.emoji, 0, r * 0.06);
+      return { canvas: c, r, size };
+    });
+  }
+
+  function buildWalls() {
+    if (walls.length) Composite.remove(engine.world, walls);
+    const opts = { isStatic: true, friction: 0.5, restitution: 0.1, label: 'wall' };
+    const thick = 60;
+    const top = jar.y - 2000;
+    const height = jar.bottom + thick - top;
+    walls = [
+      Bodies.rectangle(jar.x - thick / 2, top + height / 2, thick, height, opts),
+      Bodies.rectangle(jar.right + thick / 2, top + height / 2, thick, height, opts),
+      Bodies.rectangle(jar.cx, jar.bottom + thick / 2, jar.w + thick * 2, thick, opts),
+    ];
+    Composite.add(engine.world, walls);
+  }
+
+  function layout() {
+    dpr = Math.min(window.devicePixelRatio || 1, 3);
+    const rect = canvas.getBoundingClientRect();
+    const w = Math.round(rect.width), h = Math.round(rect.height);
+    if (w < 60 || h < 120) return;
+    const widthChanged = w !== W;
+    const oldBottom = jar ? jar.bottom : null;
+    W = w; H = h;
+    canvas.width = Math.round(W * dpr);
+    canvas.height = Math.round(H * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    const margin = 14;
+    const jw = W - margin * 2;
+    const previewR = FRUITS[4].ratio * jw;
+    const bottom = H - 6;
+    const jh = Math.min(jw * 1.42, bottom - (previewR * 2 + 44));
+    const top = bottom - jh;
+    jar = { x: margin, y: top, w: jw, h: jh, bottom, right: margin + jw, cx: margin + jw / 2 };
+    dangerY = top;
+    dropY = top - 22 - previewR;
+    corner = Math.min(16, jw * 0.05);
+    readTheme();
+    buildWalls();
+
+    if (widthChanged) {
+      buildSprites();
+      if (live.size || preview) restart();
+    } else if (oldBottom !== null && oldBottom !== bottom) {
+      const dy = bottom - oldBottom;
+      for (const b of live) Body.translate(b, { x: 0, y: dy });
+    }
+  }
+
+  // ---- Frutas ----
+  function makeFruit(k, x, y) {
+    const r = sprites[k].r;
+    const b = Bodies.circle(x, y, r, {
+      restitution: 0.1, friction: 0.5, frictionStatic: 0.8, frictionAir: 0.01, density: 0.0015, label: 'fruit',
+    });
+    b.kind = k; b.r = r; b.landed = false; b.over = 0; b.merging = false; b.born = time; b.dieAt = null;
+    Composite.add(engine.world, b);
+    live.add(b);
+    return b;
+  }
+  function removeFruit(b) {
+    Composite.remove(engine.world, b);
+    live.delete(b);
+  }
+  const clampX = (x, r) => clamp(x, jar.x + r + 4, jar.right - r - 4);
+
+  function spawnPreview() {
+    if (over) return;
+    const k = nextKind;
+    nextKind = randomDroppable();
+    updateNext();
+    const r = sprites[k].r;
+    preview = { kind: k, r, x: clampX(pointerX ?? jar.cx, r), born: time };
+    canDrop = true;
+  }
+
+  function drop() {
+    if (!canDrop || over || !preview) return;
+    makeFruit(preview.kind, preview.x, dropY);
+    preview = null;
+    canDrop = false;
+    spawnAt = time + DROP_DELAY;
+    vibrate(8);
+  }
+
+  function onContact(e) {
+    for (const { bodyA, bodyB } of e.pairs) {
+      const a = bodyA.label === 'fruit' ? bodyA : null;
+      const b = bodyB.label === 'fruit' ? bodyB : null;
+      if (a) a.landed = true;
+      if (b) b.landed = true;
+      if (a && b && a.kind === b.kind && !a.merging && !b.merging && !a.dieAt && !b.dieAt) {
+        a.merging = b.merging = true;
+        merges.push([a, b]);
+      }
+    }
+  }
+  Events.on(engine, 'collisionStart', onContact);
+  Events.on(engine, 'collisionActive', onContact);
+
+  function processMerges() {
+    if (!merges.length) return;
+    const list = merges;
+    merges = [];
+    for (const [a, b] of list) {
+      if (!live.has(a) || !live.has(b) || over) continue;
+      const k = a.kind;
+      const lower = a.position.y > b.position.y ? a : b;
+      const mx = (a.position.x + b.position.x) / 2;
+      const my = (a.position.y + b.position.y) / 2;
+      removeFruit(a);
+      removeFruit(b);
+      burst(mx, my, k, a.r);
+      if (k < LAST) {
+        const f = makeFruit(k + 1, mx, (my + lower.position.y) / 2);
+        f.landed = true;
+        addScore(points(k + 1), mx, my);
+        if (k + 1 > biggest) { biggest = k + 1; updateChain(); }
+        vibrate(15);
+      } else {
+        addScore(WATERMELON_BONUS, mx, my);
+        vibrate([20, 30, 20]);
+      }
+    }
+  }
+
+  // ---- Pontuação e HUD ----
+  function addScore(p, x, y) {
+    score += p;
+    if (score > best) {
+      best = score;
+      isRecord = true;
+      store.set('bssuika.best', String(best));
+    }
+    updateScore();
+    popups.push({ x, y, text: '+' + p, t: 0 });
+  }
+  function updateScore() {
+    scoreEl.textContent = fmt(score);
+    bestEl.textContent = 'Melhor: ' + fmt(best);
+    scoreEl.classList.remove('bump');
+    void scoreEl.offsetWidth;
+    scoreEl.classList.add('bump');
+    setTimeout(() => scoreEl.classList.remove('bump'), 160);
+  }
+  function updateNext() {
+    nextEl.style.background = color(nextKind);
+    nextEl.textContent = FRUITS[nextKind].emoji;
+    nextEl.classList.remove('pop');
+    void nextEl.offsetWidth;
+    nextEl.classList.add('pop');
+  }
+  function buildChain() {
+    chainEl.innerHTML = '';
+    FRUITS.forEach((f, k) => {
+      const d = document.createElement('div');
+      const size = 14 + k * 1.7;
+      d.className = 'dot';
+      d.style.width = d.style.height = size + 'px';
+      d.style.background = color(k);
+      d.style.fontSize = Math.round(size * 0.52) + 'px';
+      d.textContent = f.emoji;
+      d.title = f.name;
+      chainEl.appendChild(d);
+    });
+  }
+  function updateChain() {
+    [...chainEl.children].forEach((d, k) => d.classList.toggle('locked', k > biggest));
+  }
+
+  // ---- Efeitos ----
+  function burst(x, y, k, r) {
+    for (let i = 0; i < 10; i++) {
+      const angle = (i / 10) * Math.PI * 2 + (Math.random() - 0.5) * 0.5;
+      const dist = r * (1.3 + Math.random() * 0.9);
+      particles.push({ x, y, dx: Math.cos(angle) * dist, dy: Math.sin(angle) * dist, t: 0, life: 0.38, color: color(k), size: Math.max(2.5, r * 0.13) });
+    }
+    particles.push({ x, y, ring: true, r, t: 0, life: 0.32 });
+  }
+  function updateFx(dt) {
+    for (const p of particles) p.t += dt;
+    particles = particles.filter(p => p.t < p.life);
+    for (const p of popups) p.t += dt;
+    popups = popups.filter(p => p.t < 0.8);
+  }
+
+  // ---- Fim de jogo ----
+  function gameOver() {
+    over = true;
+    canDrop = false;
+    preview = null;
+    warning = false;
+    vibrate([40, 50, 40]);
+    const list = [...live].sort((a, b) => a.position.y - b.position.y);
+    list.forEach((b, i) => { b.dieAt = time + 0.35 + i * 0.045; Body.setStatic(b, true); });
+    setTimeout(showOverlay, 650);
+  }
+  function showOverlay() {
+    finalEl.textContent = fmt(score);
+    if (isRecord && score > 0) {
+      finalSubEl.textContent = 'Novo recorde! 🎉';
+      finalSubEl.classList.add('record');
+    } else {
+      finalSubEl.textContent = 'Melhor: ' + fmt(best);
+      finalSubEl.classList.remove('record');
+    }
+    overlay.hidden = false;
+    restartBtn.focus();
+  }
+  function restart() {
+    for (const b of [...live]) removeFruit(b);
+    merges = []; particles = []; popups = [];
+    score = 0; biggest = 0; over = false; isRecord = false; warning = false;
+    preview = null; canDrop = false; spawnAt = time; acc = 0;
+    nextKind = randomDroppable();
+    updateScore(); updateChain();
+    overlay.hidden = true;
+    if (demo) { demoLeft = 18; demoNext = time + 0.3; }
+  }
+
+  // ---- Loop ----
+  function postStep(dt) {
+    if (over) return;
+    if (!preview && time >= spawnAt) spawnPreview();
+    if (demo && demoLeft > 0 && time >= demoNext && preview) {
+      preview.x = clampX(jar.x + 40 + Math.random() * (jar.w - 80), preview.r);
+      drop();
+      demoLeft--;
+      demoNext = time + 0.5;
+    }
+    let near = false;
+    for (const f of live) {
+      if (!f.landed) continue;
+      const speed = Math.abs(f.velocity.x) + Math.abs(f.velocity.y);
+      if (f.position.y - f.r < dangerY + 30) near = true;
+      if (f.position.y < dangerY && speed < 1.0) {
+        f.over += dt;
+        if (f.over >= GAME_OVER_GRACE) { gameOver(); return; }
+      } else {
+        f.over = 0;
+      }
+    }
+    warning = near;
+  }
+
+  function frame(ts) {
+    requestAnimationFrame(frame);
+    if (!jar) return;
+    if (!last) last = ts;
+    const dtms = Math.min(ts - last, 100);
+    last = ts;
+    if (!over) {
+      acc += dtms;
+      while (acc >= STEP) {
+        Engine.update(engine, STEP);
+        processMerges();
+        time += STEP / 1000;
+        acc -= STEP;
+        postStep(STEP / 1000);
+        if (over) { acc = 0; break; }
+      }
+    } else {
+      time += dtms / 1000;
+    }
+    warnPhase += dtms / 1000;
+    updateFx(dtms / 1000);
+    draw();
+  }
+
+  // ---- Desenho ----
+  function jarPath(closed) {
+    ctx.beginPath();
+    ctx.moveTo(jar.x, jar.y);
+    ctx.lineTo(jar.x, jar.bottom - corner);
+    ctx.arcTo(jar.x, jar.bottom, jar.x + corner, jar.bottom, corner);
+    ctx.lineTo(jar.right - corner, jar.bottom);
+    ctx.arcTo(jar.right, jar.bottom, jar.right, jar.bottom - corner, corner);
+    ctx.lineTo(jar.right, jar.y);
+    if (closed) ctx.closePath();
+  }
+  function easeOutBack(t) { const c = 1.70158; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); }
+
+  function drawFruit(k, x, y, angle, scale) {
+    const s = sprites[k];
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(angle);
+    ctx.scale(scale, scale);
+    ctx.drawImage(s.canvas, -s.size / 2, -s.size / 2, s.size, s.size);
+    ctx.restore();
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+
+    jarPath(true);
+    ctx.fillStyle = theme.jar;
+    ctx.fill();
+
+    if (preview && !over) {
+      ctx.save();
+      ctx.setLineDash([5, 7]);
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = theme.guide;
+      ctx.beginPath();
+      ctx.moveTo(preview.x, dropY + preview.r + 2);
+      ctx.lineTo(preview.x, jar.bottom - 6);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    ctx.save();
+    ctx.setLineDash([8, 6]);
+    ctx.lineWidth = 2;
+    if (warning) {
+      ctx.globalAlpha = 0.55 + 0.45 * Math.sin(warnPhase * 10);
+      ctx.strokeStyle = theme.dangerHot;
+    } else {
+      ctx.strokeStyle = theme.danger;
+    }
+    ctx.beginPath();
+    ctx.moveTo(jar.x + 8, dangerY);
+    ctx.lineTo(jar.right - 8, dangerY);
+    ctx.stroke();
+    ctx.restore();
+
+    for (const b of live) {
+      let scale = 1;
+      if (b.dieAt !== null) {
+        if (time < b.dieAt) scale = 1;
+        else scale = clamp(1 - (time - b.dieAt) / 0.18, 0, 1);
+        if (scale <= 0) continue;
+      } else {
+        const age = time - b.born;
+        if (age < 0.2) scale = 0.55 + 0.45 * easeOutBack(age / 0.2);
+      }
+      drawFruit(b.kind, b.position.x, b.position.y, b.angle, scale);
+    }
+
+    if (preview && !over) {
+      const age = time - preview.born;
+      const scale = age < 0.15 ? 0.2 + 0.8 * easeOutBack(age / 0.15) : 1;
+      drawFruit(preview.kind, preview.x, dropY, 0, scale);
+    }
+
+    for (const p of particles) {
+      const u = p.t / p.life;
+      const e = 1 - Math.pow(1 - u, 3);
+      ctx.save();
+      ctx.globalAlpha = 1 - u;
+      if (p.ring) {
+        ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.r * (1 + 0.9 * e), 0, Math.PI * 2);
+        ctx.stroke();
+      } else {
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(p.x + p.dx * e, p.y + p.dy * e, p.size * (1 - 0.8 * u), 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    for (const p of popups) {
+      const u = p.t / 0.8;
+      ctx.save();
+      ctx.globalAlpha = u < 0.5 ? 1 : 1 - (u - 0.5) * 2;
+      ctx.fillStyle = theme.popup;
+      ctx.font = `800 20px ${getComputedStyle(document.documentElement).getPropertyValue('--font-display')}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const s = Math.min(1, 0.6 + u * 2.5);
+      ctx.translate(p.x, p.y - 46 * (1 - Math.pow(1 - u, 3)));
+      ctx.scale(s, s);
+      ctx.fillText(p.text, 0, 0);
+      ctx.restore();
+    }
+
+    jarPath(false);
+    ctx.lineWidth = 5;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = theme.rim;
+    ctx.stroke();
+  }
+
+  // ---- Entrada ----
+  function pointerTo(e) {
+    const rect = canvas.getBoundingClientRect();
+    pointerX = e.clientX - rect.left;
+    if (preview) preview.x = clampX(pointerX, preview.r);
+  }
+  canvas.addEventListener('pointerdown', e => {
+    if (over) return;
+    pressed = true;
+    try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
+    pointerTo(e);
+    e.preventDefault();
+  });
+  canvas.addEventListener('pointermove', e => {
+    if (pressed || e.pointerType === 'mouse') pointerTo(e);
+  });
+  canvas.addEventListener('pointerup', e => {
+    if (!pressed) return;
+    pressed = false;
+    pointerTo(e);
+    drop();
+  });
+  canvas.addEventListener('pointercancel', () => { pressed = false; });
+  window.addEventListener('keydown', e => {
+    if (over) { if (e.key === 'Enter' || e.key === ' ') { restart(); e.preventDefault(); } return; }
+    if (!preview) return;
+    if (e.key === 'ArrowLeft') { preview.x = clampX(preview.x - 12, preview.r); pointerX = preview.x; }
+    else if (e.key === 'ArrowRight') { preview.x = clampX(preview.x + 12, preview.r); pointerX = preview.x; }
+    else if (e.key === ' ' || e.key === 'Enter' || e.key === 'ArrowDown') { drop(); e.preventDefault(); }
+  });
+  restartBtn.addEventListener('click', restart);
+
+  // ---- Dica de instalação (Safari no iPhone, fora da Tela de Início) ----
+  const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const standalone = window.navigator.standalone === true || (window.matchMedia && matchMedia('(display-mode: standalone)').matches);
+  if (isIOS && !standalone && store.get('bssuika.tip') !== '1') tip.hidden = false;
+  tipClose.addEventListener('click', () => { tip.hidden = true; store.set('bssuika.tip', '1'); });
+
+  // ---- Inicialização ----
+  buildChain();
+  updateScore();
+  updateChain();
+  updateNext();
+  new ResizeObserver(() => layout()).observe(canvas);
+  if (window.matchMedia) matchMedia('(prefers-color-scheme: dark)').addEventListener('change', readTheme);
+  new MutationObserver(readTheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  layout();
+  requestAnimationFrame(frame);
+
+  if ('serviceWorker' in navigator && location.protocol === 'https:') {
+    navigator.serviceWorker.register('./sw.js').catch(() => {});
+  }
+})();
+</script>
+</body>
+</html>
